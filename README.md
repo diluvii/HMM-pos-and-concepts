@@ -2,6 +2,7 @@
 By Yawen Xue. Final project for COGS 21: Computational Neuroscience!
 
 **Algorithm:** HMM
+
 **Datasets:** 
 - Brown Corpus (present-day American English)
 - Experimental stimuli from Medin & Schaffer (1978): 16 items that vary along 4 binary features
