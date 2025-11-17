@@ -1,7 +1,8 @@
 # Author: Yawen Xue
-# Date: 01 Nov. 2025
+# Date: 01 Nov. 2025 - 20 Nov. 2025
 # Hidden Markov Model (HMM) class for COGS 21 final project
 import numpy as np
+from Spinner import Spinner
 
 
 # Feed it a file of observations and a file of corresponding states!
@@ -54,6 +55,13 @@ class HMM:
         observations = list(enumerate(observations))
         for obs in observations:
             self.observations[obs[1]] = obs[0]
+        # Handle unseen cases
+        if "<UNK>" not in self.observations:
+            self.observations["<UNK>"] = len(self.observations)
+
+        # Terminal display just to show that we are training; UI element really
+        spinner = Spinner()
+        spinner.start()
 
         # Then build transition & emission probabilities
         self.transition_prob = self.build_tprob()
@@ -61,6 +69,8 @@ class HMM:
 
         states_reader.close()
         observations_reader.close()
+
+        spinner.stop()
 
     '''
     Build transition probabilities
@@ -137,7 +147,7 @@ class HMM:
                 counts[i][j] = np.log(counts[i][j] / row_sum)
 
         return counts
-    
+
     '''
     Sanity check for training
     '''
@@ -148,3 +158,104 @@ class HMM:
         if print_matrix: print("\t", self.transition_prob)
         print("Emission matrix:", self.emission_prob.shape)
         if print_matrix: print("\t", self.emission_prob)
+    
+    '''
+    Viterbi algorithm for decoding from the probability matrices!
+    '''
+    def viterbi(self, obs, return_obs=False):
+        # format obs data
+        obs = obs.split(" ")
+        # handle unknowns
+        for i in range(len(obs)):
+            if obs[i] not in self.observations:
+                obs[i] = "<UNK>"
+
+        # 1) init tables for storing best log probabilities & backpointers
+        delta = np.zeros((len(obs), len(self.states)))  # probabilities
+        psi = np.full((len(obs), len(self.states)), -1) # backpointers
+
+        # 2) fill table
+        # 2.1) init for first row
+        for st in self.states:
+            tprob = self.transition_prob[self.states["#"]][self.states[st]]
+            eprob = self.emission_prob[self.states[st]][self.observations[obs[0]]]
+            delta[0][self.states[st]] = tprob + eprob
+        
+        # 2.2) argmax for second row
+        for i in range(1, len(obs)):
+            for next in self.states:
+                best_score = -np.inf
+                best_prev = None
+
+                for curr in self.states:
+                    tprob = self.transition_prob[self.states[curr]][self.states[next]]
+                    eprob = self.emission_prob[self.states[next]][self.observations[obs[i]]]
+                    score = delta[i-1][self.states[curr]] + tprob + eprob
+
+                    if score > best_score:
+                        best_score = score
+                        best_prev = curr
+
+                # assign AFTER loop
+                delta[i][self.states[next]] = best_score
+                psi[i][self.states[next]] = self.states[best_prev]
+
+        # 3) backtrack
+        curr = np.argmax(delta[-1])
+        sequence = [curr]
+
+        i = len(obs) - 1
+        while i > 0:
+            prev = psi[i][curr]
+            sequence.append(prev)
+            curr = prev
+            i -= 1
+        
+        sequence.reverse()
+
+        # 4) decode
+        for i in range(len(obs)):
+            for key, val in self.states.items():
+                if val == sequence[i]:
+                    sequence[i] = key
+        
+        if return_obs:
+            return sequence, obs
+
+        return sequence
+
+    '''
+    Command line testing
+    '''
+    def cli(self):
+        # while loop for command line testing
+        cli = True
+        while cli:
+            sentence = input("Please enter a sentence (& enter \"q\" to exit):\n")
+
+            # exit on q
+            if sentence.lower() == "q":
+                cli = False
+                break
+            
+            # else print tagging result
+            res = self.viterbi(sentence, return_obs=True)
+            if res: print(self.format_print(res[0], res[1]))
+            print('\n')
+    
+    '''
+    Helper function to display result of Viterbi on single observation
+    '''
+    def format_print(self, sequence, obs):
+        str = ""
+        for i in range(len(sequence)):
+            str += obs[i] + "/" + sequence[i] + " "
+        return str
+    
+    '''
+    File-based testing
+    '''
+    def test_on(self, test_obs_file, test_st_file):
+        with open(test_obs_file, "r") as test_obs_reader:
+            for line in test_obs_reader:
+                print(*self.viterbi(line))

@@ -25,7 +25,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install numpy
 
-python3 test_pos.py
+python3 test.py
 ```
 
 ## Build process
