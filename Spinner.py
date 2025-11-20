@@ -2,11 +2,12 @@ import sys
 import time
 import threading
 
+
 class Spinner:
     def __init__(self):
-        self.running = False
+        self.isRunning = False
         self.thread = None
-    
+
     def start(self):
         self.running = True
         self.thread = threading.Thread(target=self.animate)
