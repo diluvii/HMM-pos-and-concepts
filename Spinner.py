@@ -4,7 +4,8 @@ import threading
 
 
 class Spinner:
-    def __init__(self):
+    def __init__(self, text):
+        self.text = text
         self.isRunning = False
         self.thread = None
 
@@ -17,7 +18,7 @@ class Spinner:
         pattern = [".", "..", "..."]
         i = 0
         while self.running:
-            sys.stdout.write(f"\r\033[K\033[32mTraining{pattern[i % len(pattern)]}\033[0m")
+            sys.stdout.write(f"\r\033[K\033[32m{self.text}{pattern[i % len(pattern)]}\033[0m")
             sys.stdout.flush()
             i += 1
             time.sleep(0.3)
@@ -25,5 +26,5 @@ class Spinner:
     def stop(self):
         self.running = False
         self.thread.join()
-        sys.stdout.write("\r\n\033[92mTraining complete!\033[0m\n")
+        sys.stdout.write(f"\r\n\033[92m{self.text} complete!\033[0m\n")
         sys.stdout.flush()
