@@ -181,9 +181,12 @@ class HMM:
 
         return decoded
 
-    def test_on(self, file, key_file):
+    def test_on(self, file, key_file=None):
         base = Path(__file__).parent
-        output_name = str(key_file)[:-4] + '-output'
+        if key_file:
+            output_name = str(key_file)[:-4] + '-output'
+        else:
+            output_name = 'output'
         output_name += '.txt'
         output_file = Path(base / "inputs" / output_name)
 
@@ -198,24 +201,25 @@ class HMM:
         spinner.stop()
 
         # compare against key file
-        spinner = Spinner('comparing against key file')
-        spinner.start()
-        total = 0
-        wrong = 0
-        with open(output_file, 'r') as output_reader, open(key_file, 'r') as key_reader:
-            # check each line
-            for output_line, key_line in zip(output_reader, key_reader):
-                output = output_line.split()
-                key = key_line.split()
+        if key_file is not None:
+            spinner = Spinner('comparing against key file')
+            spinner.start()
+            total = 0
+            wrong = 0
+            with open(output_file, 'r') as output_reader, open(key_file, 'r') as key_reader:
+                # check each line
+                for output_line, key_line in zip(output_reader, key_reader):
+                    output = output_line.split()
+                    key = key_line.split()
 
-                # check each state-observation pair
-                for i in range(len(output)):
-                    total += 1
-                    if output[i] != key[i]:
-                        wrong += 1
-        spinner.stop()
-        accuracy = ((total - wrong) / total) * 100
-        print(f'accuracy: {accuracy:.4f}')
+                    # check each state-observation pair
+                    for i in range(len(output)):
+                        total += 1
+                        if output[i] != key[i]:
+                            wrong += 1
+            spinner.stop()
+            accuracy = ((total - wrong) / total) * 100
+            print(f'accuracy: {accuracy:.4f}%')
 
     def cli(self):
         print("enter sentences here to test POS tagging accuracy!\n\tplease make sure to leave a space between punctuations and words.\n\tpress q to exit.")
