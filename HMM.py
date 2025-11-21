@@ -2,15 +2,16 @@ from pathlib import Path
 import numpy as np
 from Spinner import Spinner
 
-
 class HMM:
     def __init__(self, states_file, observations_file, smoothing=0.01):
         self.states_file = states_file
         self.observations_file = observations_file
-        self.states = {}         # name -> index
-        self.index2state = []    # index -> name (filled in train)
-        self.observations = {}   # obs -> index
+        self.states = {}         # state name -> index
+        self.index2state = []    # index -> state name
+        self.observations = {}   # observation -> index
         self.smoothing = smoothing
+
+        self.fixed = []
 
         # build log likelihood probability matrices during training
         self.transition_prob = None
@@ -21,7 +22,7 @@ class HMM:
         spinner = Spinner('training')
         spinner.start()
 
-        # 1) collect states (keep everything as states as you requested)
+        # 1) collect states
         states = {'#'}
         with open(self.states_file, 'r') as st_reader:
             for line in st_reader:
@@ -29,12 +30,13 @@ class HMM:
                     states.add(s)
         states = sorted(states)
         self.states = {name: idx for idx, name in enumerate(states)}
-        # build reverse mapping list for stable index -> name access
+
+        # map indicies to states for access
         self.index2state = [None] * len(self.states)
         for name, idx in self.states.items():
             self.index2state[idx] = name
 
-        # 2) collect observations (everything, lowercase)
+        # 2) collect observations
         observations = set()
         with open(self.observations_file, 'r') as obs_reader:
             for line in obs_reader:
@@ -76,7 +78,6 @@ class HMM:
                 st_tokens = st_line.split()
                 obs_tokens = obs_line.split()
 
-                # if lengths mismatch, still iterate up to min — safer than crashing
                 L = min(len(st_tokens), len(obs_tokens))
                 for i in range(L):
                     sname = st_tokens[i]
@@ -85,17 +86,14 @@ class HMM:
                     oidx = self.observations.get(oname, self.observations["<UNK>"])
                     ecounts[sidx, oidx] += 1
 
-        # give the <UNK> column a small count for every state (so log-probs are finite)
+        # make sure <UNK> tokens are not 0 so we can take logs
         ecounts[:, self.observations["<UNK>"]] += self.smoothing
 
         self.emission_prob = self.to_log(ecounts)
-
-        # store per-state log-prob for unknown emission lookups (fast)
-        # compute as log of the (smoothed) '<UNK>' column
         self.unk_emissions = self.emission_prob[:, self.observations["<UNK>"]]
 
     def to_log(self, counts):
-        # convert counts -> probabilities with smoothing already applied
+        # apply smoothing; take logs
         counts = counts + self.smoothing
         row_sums = counts.sum(axis=1, keepdims=True)
         probs = counts / row_sums
@@ -108,23 +106,23 @@ class HMM:
         # print(self.emission_prob)
 
     ################################################################################
-    ## VITERBI
+    ### VITERBI
     ################################################################################
     def viterbi(self, obs_input, return_obs=False):
-        # 0) format obs tokens (keep tokens as-is, lowercase for lookups)
+        # 0) format observation tokens
         raw_tokens = obs_input.split()
-        tokens = [t.lower() for t in raw_tokens]  # we store observations in lowercase
+        tokens = [t.lower() for t in raw_tokens]
 
         T = len(tokens)
         S = len(self.states)
 
-        # DP tables (log-space)
+        # DP tables
         delta = np.full((T, S), -np.inf, dtype=float)
         psi = np.full((T, S), -1, dtype=int)
 
         start_idx = self.states["#"]
 
-        # init first step (do not set entry for '#' itself)
+        # init first step
         for next_idx in range(S):
             if self.index2state[next_idx] == "#":
                 continue
@@ -134,20 +132,21 @@ class HMM:
             delta[0, next_idx] = tprob + eprob
             psi[0, next_idx] = start_idx
 
-        # recursion
+        # recursive next steps
         for t in range(1, T):
             obs_idx = self.observations.get(tokens[t], self.observations["<UNK>"])
             for next_idx in range(S):
                 if self.index2state[next_idx] == "#":
                     continue
 
-                # find best previous state index (skip '#')
+                # find best previous state
                 best_score = -np.inf
                 best_prev = -1
                 for curr_idx in range(S):
+                    # skip start state
                     if self.index2state[curr_idx] == "#":
                         continue
-                    # transition from curr -> next
+                    # transition from curr to next
                     score = delta[t-1, curr_idx] + self.transition_prob[curr_idx, next_idx]
                     if score > best_score:
                         best_score = score
@@ -168,7 +167,7 @@ class HMM:
         for t in range(T-1, 0, -1):
             curr = int(psi[t, curr])
             if curr == -1:
-                # if something went wrong, fill rest with '#' as fallback
+                # if something went wrong, fill rest with "#" as fallback
                 curr = start_idx
             seq_idx.append(curr)
         seq_idx.reverse()
@@ -176,8 +175,8 @@ class HMM:
         # decode to state names
         decoded = [self.index2state[i] for i in seq_idx]
 
+        # for formatting we want to the observation as well
         if return_obs:
-            # return decoded tags and the original raw input (so format_return can use it)
             return decoded, obs_input
 
         return decoded
@@ -187,6 +186,7 @@ class HMM:
         output_name = str(key_file)[:-4] + '-output'
         output_name += '.txt'
         output_file = Path(base / "inputs" / output_name)
+
         # run viterbi on every line
         spinner = Spinner(f'testing on given file')
         spinner.start()
@@ -196,6 +196,7 @@ class HMM:
                 writer.write(self.format_return(obs, st))
                 writer.write('\n')
         spinner.stop()
+
         # compare against key file
         spinner = Spinner('comparing against key file')
         spinner.start()
@@ -207,14 +208,12 @@ class HMM:
                 output = output_line.split()
                 key = key_line.split()
 
-                # check each state/observation pair
+                # check each state-observation pair
                 for i in range(len(output)):
                     total += 1
                     if output[i] != key[i]:
                         wrong += 1
-        
         spinner.stop()
-        
         accuracy = ((total - wrong) / total) * 100
         print(f'accuracy: {accuracy:.4f}')
 
@@ -228,17 +227,22 @@ class HMM:
             if sentence == 'q':
                 break
 
-            # don't process '' or '\n'
+            # don't process empty lines
             if sentence == '' or sentence == '\n':
                 continue
 
             st, obs = self.viterbi(sentence, return_obs=True)
             print(self.format_return(obs, st))
 
-    def valid_input(self, sentence):
-        # TODO: keep as you like; here we accept anything
-        return True
-
     def format_return(self, obs, st):
-        # st is a list of tags aligned to tokens in obs
-        return " ".join(st)
+        raw = obs.split()
+
+        new_tags = []
+        for tok, tag in zip(raw, st):
+            # if token is in fixed punctuation list, just add that token itself
+            if tok in self.fixed:
+                new_tags.append(tok)
+            else:
+                new_tags.append(tag)
+
+        return " ".join(new_tags)
